@@ -167,49 +167,55 @@ class Prophet(object):
 
         logger.debug("Loaded stan backend: %s", self.stan_backend.get_type())
 
-    def validate_inputs(self):
+    import pandas as pd
+
+    def validate_inputs(growth, changepoint_range, holidays=None, seasonality_mode=None, holidays_mode=None):
         """Validates the inputs to Prophet."""
-        if self.growth not in ('linear', 'logistic', 'flat'):
-            raise ValueError(
-                'Parameter "growth" should be "linear", "logistic" or "flat".')
-        if not isinstance(self.changepoint_range, (int, float)):
-            raise ValueError("changepoint_range must be a number in [0, 1]'")
-        if ((self.changepoint_range < 0) or (self.changepoint_range > 1)):
+        valid_growths = ('linear', 'logistic', 'flat')
+        if growth not in valid_growths:
+            raise ValueError(f'Parameter "growth" should be one of {valid_growths}.')
+
+        if not 0 <= changepoint_range <= 1:
             raise ValueError('Parameter "changepoint_range" must be in [0, 1]')
-        if self.holidays is not None:
-            if not (
-                isinstance(self.holidays, pd.DataFrame)
-                and 'ds' in self.holidays  # noqa W503
-                and 'holiday' in self.holidays  # noqa W503
-            ):
-                raise ValueError('holidays must be a DataFrame with "ds" and '
-                                 '"holiday" columns.')
-            self.holidays['ds'] = pd.to_datetime(self.holidays['ds'])
-            if (
-                self.holidays['ds'].isnull().any()
-                or self.holidays['holiday'].isnull().any()
-            ):
-                raise ValueError('Found a NaN in holidays dataframe.')
-            has_lower = 'lower_window' in self.holidays
-            has_upper = 'upper_window' in self.holidays
-            if has_lower + has_upper == 1:
-                raise ValueError('Holidays must have both lower_window and ' +
-                                 'upper_window, or neither')
-            if has_lower:
-                if self.holidays['lower_window'].max() > 0:
-                    raise ValueError('Holiday lower_window should be <= 0')
-                if self.holidays['upper_window'].min() < 0:
-                    raise ValueError('Holiday upper_window should be >= 0')
-            for h in self.holidays['holiday'].unique():
-                self.validate_column_name(h, check_holidays=False)
-        if self.seasonality_mode not in ['additive', 'multiplicative']:
-            raise ValueError(
-                'seasonality_mode must be "additive" or "multiplicative"'
-            )
-        if self.holidays_mode not in ['additive', 'multiplicative']:
-            raise ValueError(
-                'holidays_mode must be "additive" or "multiplicative"'
-            )
+
+        if holidays is not None:
+            validate_holidays(holidays)
+
+        valid_modes = ('additive', 'multiplicative')
+        if seasonality_mode not in valid_modes:
+            raise ValueError(f'seasonality_mode must be one of {valid_modes}')
+
+        if holidays_mode not in valid_modes:
+            raise ValueError(f'holidays_mode must be one of {valid_modes}')
+
+    def validate_holidays(holidays):
+        """Validates the holidays DataFrame."""
+        if not isinstance(holidays, pd.DataFrame) or {'ds', 'holiday'} - set(holidays.columns):
+            raise ValueError('holidays must be a DataFrame with "ds" and "holiday" columns.')
+
+        holidays['ds'] = pd.to_datetime(holidays['ds'])
+        if holidays.isnull().any().any():
+            raise ValueError('Found a NaN in holidays DataFrame.')
+
+        if ('lower_window' in holidays) ^ ('upper_window' in holidays):
+            raise ValueError('Holidays must have both lower_window and upper_window, or neither')
+
+        if 'lower_window' in holidays:
+            if holidays['lower_window'].max() > 0:
+                raise ValueError('Holiday lower_window should be <= 0')
+            if holidays['upper_window'].min() < 0:
+                raise ValueError('Holiday upper_window should be >= 0')
+
+        for holiday in holidays['holiday'].unique():
+            validate_column_name(holiday, check_holidays=False)
+
+    def validate_column_name(column_name, check_holidays=True):
+        """Validates the column name."""
+        if not column_name.isidentifier():
+            raise ValueError(f'Invalid column name: {column_name}')
+        if check_holidays and column_name.lower() == 'holiday':
+            raise ValueError('Invalid column name: "holiday"')
+
 
     def validate_column_name(self, name, check_holidays=True,
                              check_seasonalities=True, check_regressors=True):

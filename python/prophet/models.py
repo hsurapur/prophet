@@ -12,6 +12,7 @@ from collections import OrderedDict
 from enum import Enum
 import importlib_resources
 import platform
+from scipy.optimize import minimize
 
 import logging
 logger = logging.getLogger('prophet.models')
@@ -103,34 +104,27 @@ class CmdStanPyBackend(IStanBackend):
         model_file = importlib_resources.files("prophet") / "stan_model" / "prophet_model.bin"
         return cmdstanpy.CmdStanModel(exe_file=str(model_file))
 
-    def fit(self, stan_init, stan_data, **kwargs):
+    def fit(self, stan_init, stan_data, **kwargs) -> dict:
         if 'inits' not in kwargs and 'init' in kwargs:
             stan_init = self.sanitize_custom_inits(stan_init, kwargs['init'])
             del kwargs['init']
 
         inits_list, data_list = self.prepare_data(stan_init, stan_data)
-        args = dict(
-            data=data_list,
-            inits=inits_list,
-            algorithm='Newton' if data_list['T'] < 100 else 'LBFGS',
-            iter=int(1e4),
-        )
-        args.update(kwargs)
 
-        try:
-            self.stan_fit = self.model.optimize(**args)
-        except RuntimeError as e:
-            # Fall back on Newton
-            if not self.newton_fallback or args['algorithm'] == 'Newton':
-                raise e
-            logger.warning('Optimization terminated abnormally. Falling back to Newton.')
-            args['algorithm'] = 'Newton'
-            self.stan_fit = self.model.optimize(**args)
-        params = self.stan_to_dict_numpy(
-            self.stan_fit.column_names, self.stan_fit.optimized_params_np)
-        for par in params:
-            params[par] = params[par].reshape((1, -1))
-        return params
+        # Optimization or machine learning code
+        def loss_function(params):
+            # Calculate loss using the given parameters
+            # Example:
+            # loss = your_loss_function(params, stan_init, stan_data)
+            pass
+
+        initial_guess = ...  # Define initial parameter guess
+        result = minimize(loss_function, initial_guess, method='BFGS')
+
+        optimized_params = result.x  # Extract optimized parameters
+        ...
+
+        return optimized_params
 
     def sampling(self, stan_init, stan_data, samples, **kwargs) -> dict:
         if 'inits' not in kwargs and 'init' in kwargs:
