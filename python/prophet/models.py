@@ -13,6 +13,7 @@ from enum import Enum
 import importlib_resources
 import platform
 from scipy.optimize import minimize
+import numpy as np
 
 import logging
 logger = logging.getLogger('prophet.models')

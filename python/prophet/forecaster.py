@@ -13,135 +13,44 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Dict, List, Union
 
+from matplotlib.pyplot import plot
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+import pandas as pd
+import numpy as np
+from fbprophet import Prophet
+import logging
+from collections import OrderedDict
 from prophet.make_holidays import get_holiday_names, make_holidays_df
-from prophet.models import StanBackendEnum, ModelInputData, ModelParams, TrendIndicator
-from prophet.plot import (plot, plot_components)
+from prophet.models import StanBackendEnum
+
+from python.prophet.models import ModelInputData, ModelParams, TrendIndicator
+from python.prophet.plot import plot_components
 
 logger = logging.getLogger('prophet')
-logger.setLevel(logging.INFO)
-NANOSECONDS_TO_SECONDS = 1000 * 1000 * 1000
 
-class Prophet(object):
-    """Prophet forecaster.
 
-    Parameters
-    ----------
-    growth: String 'linear', 'logistic' or 'flat' to specify a linear, logistic or
-        flat trend.
-    changepoints: List of dates at which to include potential changepoints. If
-        not specified, potential changepoints are selected automatically.
-    n_changepoints: Number of potential changepoints to include. Not used
-        if input `changepoints` is supplied. If `changepoints` is not supplied,
-        then n_changepoints potential changepoints are selected uniformly from
-        the first `changepoint_range` proportion of the history.
-    changepoint_range: Proportion of history in which trend changepoints will
-        be estimated. Defaults to 0.8 for the first 80%. Not used if
-        `changepoints` is specified.
-    yearly_seasonality: Fit yearly seasonality.
-        Can be 'auto', True, False, or a number of Fourier terms to generate.
-    weekly_seasonality: Fit weekly seasonality.
-        Can be 'auto', True, False, or a number of Fourier terms to generate.
-    daily_seasonality: Fit daily seasonality.
-        Can be 'auto', True, False, or a number of Fourier terms to generate.
-    holidays: pd.DataFrame with columns holiday (string) and ds (date type)
-        and optionally columns lower_window and upper_window which specify a
-        range of days around the date to be included as holidays.
-        lower_window=-2 will include 2 days prior to the date as holidays. Also
-        optionally can have a column prior_scale specifying the prior scale for
-        that holiday.
-    seasonality_mode: 'additive' (default) or 'multiplicative'.
-    seasonality_prior_scale: Parameter modulating the strength of the
-        seasonality model. Larger values allow the model to fit larger seasonal
-        fluctuations, smaller values dampen the seasonality. Can be specified
-        for individual seasonalities using add_seasonality.
-    holidays_prior_scale: Parameter modulating the strength of the holiday
-        components model, unless overridden in the holidays input.
-    changepoint_prior_scale: Parameter modulating the flexibility of the
-        automatic changepoint selection. Large values will allow many
-        changepoints, small values will allow few changepoints.
-    mcmc_samples: Integer, if greater than 0, will do full Bayesian inference
-        with the specified number of MCMC samples. If 0, will do MAP
-        estimation.
-    interval_width: Float, width of the uncertainty intervals provided
-        for the forecast. If mcmc_samples=0, this will be only the uncertainty
-        in the trend using the MAP estimate of the extrapolated generative
-        model. If mcmc.samples>0, this will be integrated over all model
-        parameters, which will include uncertainty in seasonality.
-    uncertainty_samples: Number of simulated draws used to estimate
-        uncertainty intervals. Settings this value to 0 or False will disable
-        uncertainty estimation and speed up the calculation.
-    stan_backend: str as defined in StanBackendEnum default: None - will try to
-        iterate over all available backends and find the working one
-    holidays_mode: 'additive' or 'multiplicative'. Defaults to seasonality_mode.
-    """
-
-    def __init__(
-            self,
-            growth='linear',
-            changepoints=None,
-            n_changepoints=25,
-            changepoint_range=0.8,
-            yearly_seasonality='auto',
-            weekly_seasonality='auto',
-            daily_seasonality='auto',
-            holidays=None,
-            seasonality_mode='additive',
-            seasonality_prior_scale=10.0,
-            holidays_prior_scale=10.0,
-            changepoint_prior_scale=0.05,
-            mcmc_samples=0,
-            interval_width=0.80,
-            uncertainty_samples=1000,
-            stan_backend=None,
-            scaling: str = 'absmax',
-            holidays_mode=None,
-    ):
-        self.growth = growth
-
-        self.changepoints = changepoints
-        if self.changepoints is not None:
-            self.changepoints = pd.Series(pd.to_datetime(self.changepoints), name='ds')
-            self.n_changepoints = len(self.changepoints)
-            self.specified_changepoints = True
-        else:
-            self.n_changepoints = n_changepoints
-            self.specified_changepoints = False
-
-        self.changepoint_range = changepoint_range
-        self.yearly_seasonality = yearly_seasonality
-        self.weekly_seasonality = weekly_seasonality
-        self.daily_seasonality = daily_seasonality
-        self.holidays = holidays
-
-        self.seasonality_mode = seasonality_mode
-        self.holidays_mode = holidays_mode
-        if holidays_mode is None:
-            self.holidays_mode = self.seasonality_mode
-
-        self.seasonality_prior_scale = float(seasonality_prior_scale)
-        self.changepoint_prior_scale = float(changepoint_prior_scale)
-        self.holidays_prior_scale = float(holidays_prior_scale)
-
-        self.mcmc_samples = mcmc_samples
-        self.interval_width = interval_width
+class ProphetWithML(Prophet):
+    def __init__(self, growth='linear', changepoints=None, n_changepoints=25, 
+                 changepoint_range=0.8, yearly_seasonality='auto', weekly_seasonality='auto', 
+                 daily_seasonality='auto', holidays=None, seasonality_mode='additive', 
+                 seasonality_prior_scale=10.0, holidays_prior_scale=10.0, changepoint_prior_scale=0.05, 
+                 mcmc_samples=0, interval_width=0.80, uncertainty_samples=1000, stan_backend=None, 
+                 scaling='absmax', holidays_mode=None):
+        super().__init__(growth=growth, changepoints=changepoints, n_changepoints=n_changepoints, 
+                         changepoint_range=changepoint_range, yearly_seasonality=yearly_seasonality, 
+                         weekly_seasonality=weekly_seasonality, daily_seasonality=daily_seasonality, 
+                         holidays=holidays, seasonality_mode=seasonality_mode, 
+                         seasonality_prior_scale=seasonality_prior_scale, 
+                         holidays_prior_scale=holidays_prior_scale, changepoint_prior_scale=changepoint_prior_scale, 
+                         mcmc_samples=mcmc_samples, interval_width=interval_width)
         self.uncertainty_samples = uncertainty_samples
-        if scaling not in ("absmax", "minmax"):
-            raise ValueError("scaling must be one of 'absmax' or 'minmax'")
         self.scaling = scaling
+        self.holidays_mode = holidays_mode
 
-        # Set during fitting or by other methods
-        self.start = None
-        self.y_min = None
-        self.y_scale = None
-        self.logistic_floor = False
-        self.t_scale = None
-        self.changepoints_t = None
-        self.seasonalities = OrderedDict({})
-        self.extra_regressors = OrderedDict({})
+        # Additional attributes
         self.country_holidays = None
         self.stan_fit = None
         self.params = {}
@@ -151,7 +60,8 @@ class Prophet(object):
         self.component_modes = None
         self.train_holiday_names = None
         self.fit_kwargs = {}
-        self.validate_inputs()
+
+        self.validate_inputs(growth, changepoint_range, holidays, seasonality_mode, holidays_mode)
         self._load_stan_backend(stan_backend)
 
     def _load_stan_backend(self, stan_backend):
@@ -167,9 +77,7 @@ class Prophet(object):
 
         logger.debug("Loaded stan backend: %s", self.stan_backend.get_type())
 
-    import pandas as pd
-
-    def validate_inputs(growth, changepoint_range, holidays=None, seasonality_mode=None, holidays_mode=None):
+    def validate_inputs(self, growth, changepoint_range, holidays=None, seasonality_mode=None, holidays_mode=None):
         """Validates the inputs to Prophet."""
         valid_growths = ('linear', 'logistic', 'flat')
         if growth not in valid_growths:
@@ -179,7 +87,7 @@ class Prophet(object):
             raise ValueError('Parameter "changepoint_range" must be in [0, 1]')
 
         if holidays is not None:
-            validate_holidays(holidays)
+            self.validate_holidays(holidays)
 
         valid_modes = ('additive', 'multiplicative')
         if seasonality_mode not in valid_modes:
@@ -188,7 +96,7 @@ class Prophet(object):
         if holidays_mode not in valid_modes:
             raise ValueError(f'holidays_mode must be one of {valid_modes}')
 
-    def validate_holidays(holidays):
+    def validate_holidays(self, holidays):
         """Validates the holidays DataFrame."""
         if not isinstance(holidays, pd.DataFrame) or {'ds', 'holiday'} - set(holidays.columns):
             raise ValueError('holidays must be a DataFrame with "ds" and "holiday" columns.')
@@ -207,14 +115,57 @@ class Prophet(object):
                 raise ValueError('Holiday upper_window should be >= 0')
 
         for holiday in holidays['holiday'].unique():
-            validate_column_name(holiday, check_holidays=False)
+            self.validate_column_name(holiday, check_holidays=False)
 
-    def validate_column_name(column_name, check_holidays=True):
-        """Validates the column name."""
-        if not column_name.isidentifier():
-            raise ValueError(f'Invalid column name: {column_name}')
-        if check_holidays and column_name.lower() == 'holiday':
-            raise ValueError('Invalid column name: "holiday"')
+    def validate_column_name(self, column_name, check_holidays=True,
+                             check_seasonalities=True, check_regressors=True):
+        """Validates the name of a seasonality, holiday, or regressor.
+
+        Parameters
+        ----------
+        column_name: string
+        check_holidays: bool check if name already used for holiday
+        check_seasonalities: bool check if name already used for seasonality
+        check_regressors: bool check if name already used for regressor
+        """
+        if '_delim_' in column_name:
+            raise ValueError('Name cannot contain "_delim_"')
+        reserved_names = [
+            'trend', 'additive_terms', 'daily', 'weekly', 'yearly',
+            'holidays', 'zeros', 'extra_regressors_additive', 'yhat',
+            'extra_regressors_multiplicative', 'multiplicative_terms',
+        ]
+        rn_l = [n + '_lower' for n in reserved_names]
+        rn_u = [n + '_upper' for n in reserved_names]
+        reserved_names.extend(rn_l)
+        reserved_names.extend(rn_u)
+        reserved_names.extend([
+            'ds', 'y', 'cap', 'floor', 'y_scaled', 'cap_scaled'])
+        if column_name in reserved_names:
+            raise ValueError(
+                'Name {name!r} is reserved.'.format(name=column_name)
+            )
+        if (check_holidays and self.holidays is not None and
+                column_name in self.holidays['holiday'].unique()):
+            raise ValueError(
+                'Name {name!r} already used for a holiday.'.format(name=column_name)
+            )
+        if (check_holidays and self.country_holidays is not None and
+                column_name in get_holiday_names(self.country_holidays)):
+            raise ValueError(
+                'Name {name!r} is a holiday name in {country_holidays}.'
+                .format(name=column_name, country_holidays=self.country_holidays)
+            )
+        if check_seasonalities and column_name in self.seasonalities:
+            raise ValueError(
+                'Name {name!r} already used for a seasonality.'
+                .format(name=column_name)
+            )
+        if check_regressors and column_name in self.extra_regressors:
+            raise ValueError(
+                'Name {name!r} already used for an added regressor.'
+                .format(name=column_name)
+            )
 
 
     def validate_column_name(self, name, check_holidays=True,
@@ -480,7 +431,7 @@ class Prophet(object):
             raise ValueError("series_order must be >= 1")
 
         # convert to days since epoch
-        t = dates.to_numpy(dtype=np.int64) // NANOSECONDS_TO_SECONDS / (3600 * 24.)
+        t = dates.to_numpy(dtype=np.int64) // 1e-9 / (3600 * 24.)
 
         x_T = t * np.pi * 2
         fourier_components = np.empty((dates.shape[0], 2 * series_order))
